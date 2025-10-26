@@ -84,16 +84,43 @@ export default class DataViewSchema<Fields extends Record<string, FieldDefinitio
   }
 
   private createField<Type extends TypeSizeKey>(type: Type) {
-    return <FieldName extends string>(fieldName: FieldName, littleEndian: boolean = false) => {
+    return <T extends ValueType<Type>, FieldName extends string>(
+      fieldName: FieldName,
+      littleEndian: boolean = false,
+      allowedValues?: readonly T[]
+    ) => {
       const byteLength = TypeSize[type];
-      const field: FieldDefinition<ValueType<Type>> = {
+      const field: FieldDefinition<T> = {
         byteLength,
         offset: this.offset,
         read(backend, baseOffset) {
           const methodName = `get${type}` as const;
-          return backend[methodName](baseOffset + field.offset, littleEndian) as ValueType<Type>;
+          const value = backend[methodName](
+            baseOffset + field.offset,
+            littleEndian
+          ) as ValueType<Type>;
+
+          if (allowedValues && !allowedValues.includes(value as unknown as T)) {
+            throw new Error(`Invalid string value: "${value}"`);
+          }
+
+          return value as T;
         },
         write(backend, baseOffset, value) {
+          if (type === "BigInt64" || type === "BigUint64") {
+            if (typeof value !== "bigint") {
+              throw new Error(`Expected bigint for ${type}, got ${typeof value}`);
+            }
+          } else {
+            if (typeof value !== "number") {
+              throw new Error(`Expected number for ${type}, got ${typeof value}`);
+            }
+          }
+
+          if (allowedValues && !allowedValues.includes(value)) {
+            throw new Error(`Value "${value}" is not allowed`);
+          }
+
           const methodName = `set${type}` as const;
           backend[methodName](baseOffset + field.offset, value as never, littleEndian);
         },
@@ -177,7 +204,11 @@ export default class DataViewSchema<Fields extends Record<string, FieldDefinitio
     return this.registerField(fieldName, field);
   }
 
-  addString<FieldName extends string>(fieldName: FieldName, maxByteLength: number) {
+  addString<FieldName extends string, T extends string = string>(
+    fieldName: FieldName,
+    maxByteLength: number,
+    allowedValues?: readonly T[]
+  ) {
     if (maxByteLength <= 0 || !Number.isInteger(maxByteLength)) {
       throw new Error(`Invalid maxByteLength: ${maxByteLength}. Must be a positive integer.`);
     }
@@ -186,7 +217,7 @@ export default class DataViewSchema<Fields extends Record<string, FieldDefinitio
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
 
-    const field: FieldDefinition<string> = {
+    const field: FieldDefinition<T> = {
       byteLength: maxByteLength + prefixSize,
       offset: this.offset,
       read(backend, baseOffset) {
@@ -205,9 +236,20 @@ export default class DataViewSchema<Fields extends Record<string, FieldDefinitio
           backend.byteOffset + baseOffset + field.offset + prefixSize,
           Number(length)
         );
-        return decoder.decode(stringBytes);
+
+        const value = decoder.decode(stringBytes);
+
+        if (allowedValues && !allowedValues.includes(value as T)) {
+          throw new Error(`Invalid string value: "${value}"`);
+        }
+
+        return value as T;
       },
       write(backend, baseOffset, value) {
+        if (allowedValues && !allowedValues.includes(value)) {
+          throw new Error(`Value "${value}" is not allowed`);
+        }
+
         const encoded = encoder.encode(value);
         if (encoded.length > maxByteLength) {
           throw new Error(
