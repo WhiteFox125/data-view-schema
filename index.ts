@@ -236,10 +236,6 @@ export default class DataViewSchema<Fields extends Record<string, FieldDefinitio
 
         const value = decoder.decode(stringBytes);
 
-        if (allowedValues && !allowedValues.includes(value as T)) {
-          throw new Error(`Invalid string value: "${value}"`);
-        }
-
         return value as T;
       },
       write(backend, baseOffset, value) {
