@@ -95,14 +95,11 @@ export default class DataViewSchema<Fields extends Record<string, FieldDefinitio
         offset: this.offset,
         read(backend, baseOffset) {
           const methodName = `get${type}` as const;
+
           const value = backend[methodName](
             baseOffset + field.offset,
             littleEndian
           ) as ValueType<Type>;
-
-          if (allowedValues && !allowedValues.includes(value as unknown as T)) {
-            throw new Error(`Invalid string value: "${value}"`);
-          }
 
           return value as T;
         },
